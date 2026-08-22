@@ -32,7 +32,15 @@ CREATE TABLE IF NOT EXISTS policies (
     UNIQUE (role, table_name, operation)
 );
 
--- audit_logs: the final decision recorded for every POST /api/query call
+-- audit_logs: the final decision recorded for every POST /api/query call.
+-- pending_approval is an immutable historical fact set once at submission
+-- time (does the policy in effect at that moment require a human to sign
+-- off on this decision?). approval_status/reviewed_by/reviewed_at are a
+-- separate, mutable review-workflow state layered on top -- set later, at
+-- most once, via PATCH /api/audit-logs/:id/review. Keeping them distinct
+-- means a query's original pending_approval flag stays accurate as a
+-- record of what happened at submission time even after it's been
+-- reviewed.
 CREATE TABLE IF NOT EXISTS audit_logs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID REFERENCES users(id),
@@ -46,6 +54,9 @@ CREATE TABLE IF NOT EXISTS audit_logs (
     ai_explanation TEXT,            -- nullable, populated in Phase 5
     suggested_rewrite TEXT,         -- nullable, populated in Phase 5
     execution_time_ms INTEGER,      -- nullable, populated in Phase 6
+    approval_status TEXT DEFAULT NULL,  -- NULL | 'approved' | 'rejected'
+    reviewed_by UUID REFERENCES users(id),
+    reviewed_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT now()
 );
 
@@ -53,3 +64,20 @@ CREATE TABLE IF NOT EXISTS audit_logs (
 -- already-existing table, so re-running this file on an older DB needs an
 -- explicit ADD COLUMN too.
 ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS pending_approval BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS approval_status TEXT DEFAULT NULL;
+ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS reviewed_by UUID REFERENCES users(id);
+ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ;
+
+-- role_change_logs: audit trail for admin-driven role changes made via
+-- PATCH /api/users/:id/role. Deliberately separate from audit_logs -- a
+-- role change isn't a query decision (no raw_query/risk_level/decision
+-- apply to it), so a dedicated table keeps every column meaningful instead
+-- of mostly-null.
+CREATE TABLE IF NOT EXISTS role_change_logs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    admin_id UUID REFERENCES users(id),
+    target_user_id UUID REFERENCES users(id),
+    old_role TEXT NOT NULL,
+    new_role TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT now()
+);

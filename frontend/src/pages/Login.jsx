@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { ShieldCheck } from "lucide-react";
 import { login as loginRequest } from "../api/auth";
 import { useAuth } from "../context/AuthContext";
@@ -73,6 +73,13 @@ export default function Login() {
         <Button type="submit" disabled={submitting} className="w-full">
           {submitting ? "Signing in..." : "Sign in"}
         </Button>
+
+        <p className="mt-5 text-center text-sm text-muted-foreground">
+          Don't have an account?{" "}
+          <Link to="/register" className="font-bold text-primary hover:underline">
+            Register
+          </Link>
+        </p>
       </form>
     </div>
   );

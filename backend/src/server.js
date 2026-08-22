@@ -6,6 +6,7 @@ const queryRoutes = require("./routes/query");
 const policiesRoutes = require("./routes/policies");
 const auditRoutes = require("./routes/audit");
 const optimizeRoutes = require("./routes/optimize");
+const usersRoutes = require("./routes/users");
 const { authenticate } = require("./auth/middleware");
 const { seedPolicies } = require("./db/seedPolicies");
 const logger = require("./config/logger");
@@ -29,6 +30,7 @@ app.use("/api", queryRoutes);
 app.use("/api", policiesRoutes);
 app.use("/api", auditRoutes);
 app.use("/api", optimizeRoutes);
+app.use("/api", usersRoutes);
 
 if (require.main === module) {
   seedPolicies()

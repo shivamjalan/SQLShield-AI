@@ -5,6 +5,18 @@ const { rateLimit } = require("../config/redis");
 const logger = require("../config/logger");
 const { parseQuery } = require("../engines/parser");
 const { makeDecision } = require("../engines/decisionEngine");
+const { executeQuerySafely } = require("../engines/executor");
+
+// Execution only ever runs for the narrowest possible case: an ALLOWed,
+// not-pending-approval, read-only SELECT. Not INSERT/UPDATE/DELETE/DROP
+// even when policy permits them for a role, not REWRITE (a suggestion the
+// user hasn't actually asked to run), and not anything still awaiting
+// approval even if its eventual decision would be ALLOW -- see the
+// executor.js/query.js comments and the chat explanation this shipped
+// with for why each of those boundaries exists.
+function isEligibleForExecution(parsed, result) {
+  return result.decision === "ALLOW" && !result.pendingApproval && parsed.operation === "SELECT";
+}
 
 const router = express.Router();
 
@@ -41,11 +53,26 @@ router.post("/query", authenticate, rateLimit, async (req, res) => {
     logger.error({ event: "query_history_write_failed", err: err.message }, "Failed to save query history");
   }
 
+  let execution = null;
+  if (isEligibleForExecution(parsed, result)) {
+    logger.info(
+      { event: "query_execution_attempt", userId: req.user.id, operation: parsed.operation },
+      "Executing ALLOWed SELECT against target_db"
+    );
+    execution = await executeQuerySafely(query);
+    if (execution.error) {
+      logger.error(
+        { event: "query_execution_error", userId: req.user.id, err: execution.error },
+        "Query execution failed"
+      );
+    }
+  }
+
   try {
     await pool.query(
       `INSERT INTO audit_logs
-         (user_id, raw_query, parsed_operation, target_table, risk_level, decision, pending_approval, reasons, ai_explanation, suggested_rewrite)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+         (user_id, raw_query, parsed_operation, target_table, risk_level, decision, pending_approval, reasons, ai_explanation, suggested_rewrite, execution_time_ms)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
       [
         req.user.id,
         query,
@@ -57,6 +84,7 @@ router.post("/query", authenticate, rateLimit, async (req, res) => {
         JSON.stringify(result.reasons),
         result.aiExplanation,
         result.suggestedRewrite,
+        execution ? execution.executionTimeMs : null,
       ]
     );
   } catch (err) {
@@ -82,6 +110,15 @@ router.post("/query", authenticate, rateLimit, async (req, res) => {
       suggestedRewrite: result.suggestedRewrite,
       rewrittenQuery: result.rewrittenQuery,
     },
+    execution: execution
+      ? {
+          rows: execution.rows,
+          rowCount: execution.rowCount,
+          truncated: execution.truncated,
+          executionTimeMs: execution.executionTimeMs,
+          error: execution.error,
+        }
+      : null,
   });
 });
 

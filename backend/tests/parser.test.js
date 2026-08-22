@@ -45,4 +45,35 @@ describe("parseQuery", () => {
     expect(result.operation).toBe("UNKNOWN");
     expect(result.parseError).toEqual(expect.any(String));
   });
+
+  it("detects a missing LIMIT clause", () => {
+    expect(parseQuery("SELECT * FROM orders").hasLimitClause).toBe(false);
+  });
+
+  it("detects a present LIMIT clause", () => {
+    expect(parseQuery("SELECT * FROM orders LIMIT 10").hasLimitClause).toBe(true);
+  });
+
+  it("reports subqueryDepth 1 for a query with no subqueries", () => {
+    expect(parseQuery("SELECT id FROM users WHERE id = 1").subqueryDepth).toBe(1);
+  });
+
+  it("reports subqueryDepth 2 for a single level of subquery nesting", () => {
+    const result = parseQuery("SELECT id FROM users WHERE id IN (SELECT id FROM orders)");
+    expect(result.subqueryDepth).toBe(2);
+  });
+
+  it("reports subqueryDepth 4 for three levels of nested subqueries", () => {
+    const result = parseQuery(
+      "SELECT * FROM orders WHERE customer_id IN (SELECT id FROM customers WHERE id IN (SELECT id FROM customers WHERE id IN (SELECT id FROM customers)))"
+    );
+    expect(result.subqueryDepth).toBe(4);
+  });
+
+  it("recognizes TRUNCATE, GRANT, REVOKE, and ALTER TABLE as their own operations", () => {
+    expect(parseQuery("TRUNCATE TABLE orders").operation).toBe("TRUNCATE");
+    expect(parseQuery("GRANT SELECT ON orders TO developer").operation).toBe("GRANT");
+    expect(parseQuery("REVOKE SELECT ON orders FROM developer").operation).toBe("REVOKE");
+    expect(parseQuery("ALTER TABLE orders ADD COLUMN note TEXT").operation).toBe("ALTER");
+  });
 });

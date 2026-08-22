@@ -5,6 +5,7 @@ import { DecisionBadge, RiskBadge } from "../components/Badge";
 import Card from "../components/ui/Card";
 import Button from "../components/ui/Button";
 import { Textarea } from "../components/ui/Input";
+import ResultsTable from "../components/ResultsTable";
 
 export default function QueryPlayground() {
   const { session } = useAuth();
@@ -108,6 +109,15 @@ export default function QueryPlayground() {
                   This rewrite did not pass the security/policy engines on its own, so it was not applied.
                 </p>
               )}
+            </div>
+          )}
+
+          {result.execution && (
+            <div>
+              <p className="mb-1 text-xs font-bold uppercase tracking-wide text-muted-foreground">
+                Execution result
+              </p>
+              <ResultsTable execution={result.execution} />
             </div>
           )}
         </Card>

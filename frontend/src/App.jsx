@@ -3,11 +3,14 @@ import { AuthProvider } from "./context/AuthContext";
 import ProtectedRoute from "./components/ProtectedRoute";
 import Layout from "./components/Layout";
 import Login from "./pages/Login";
+import Register from "./pages/Register";
 import Overview from "./pages/Overview";
 import SecurityLogs from "./pages/SecurityLogs";
 import QueryPlayground from "./pages/QueryPlayground";
 import PerformanceAnalytics from "./pages/PerformanceAnalytics";
 import PolicyManagement from "./pages/PolicyManagement";
+import UserManagement from "./pages/UserManagement";
+import ApprovalQueue from "./pages/ApprovalQueue";
 
 function App() {
   return (
@@ -15,6 +18,7 @@ function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Register />} />
           <Route element={<ProtectedRoute />}>
             <Route element={<Layout />}>
               <Route path="/" element={<Overview />} />
@@ -22,6 +26,8 @@ function App() {
               <Route path="/playground" element={<QueryPlayground />} />
               <Route path="/performance" element={<PerformanceAnalytics />} />
               <Route path="/policies" element={<PolicyManagement />} />
+              <Route path="/users" element={<UserManagement />} />
+              <Route path="/approvals" element={<ApprovalQueue />} />
             </Route>
           </Route>
         </Routes>

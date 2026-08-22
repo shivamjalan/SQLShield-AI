@@ -9,6 +9,7 @@ const SEEDED_POLICIES = [
   { role: "developer", table_name: "*", operation: "SELECT", allowed: true, requires_approval: false },
   { role: "developer", table_name: "*", operation: "INSERT", allowed: true, requires_approval: false },
   { role: "developer", table_name: "*", operation: "DELETE", allowed: true, requires_approval: true },
+  { role: "developer", table_name: "policies", operation: "INSERT", allowed: false, requires_approval: false },
 ];
 
 // query_history/audit_logs writes and the policies lookup are mocked here
@@ -36,6 +37,21 @@ jest.mock("../src/engines/aiEngine", () => ({
   })),
 }));
 
+// This suite is about routing/wiring (does execution run when and only
+// when it should), not the executor's own guardrail logic -- that's
+// covered live against real Postgres in tests/executor.test.js. Mocking
+// it here lets these tests assert exactly whether it was called, without
+// a target_db dependency.
+jest.mock("../src/engines/executor", () => ({
+  executeQuerySafely: jest.fn(async () => ({
+    rows: [{ id: 1 }],
+    rowCount: 1,
+    truncated: false,
+    executionTimeMs: 1,
+    error: null,
+  })),
+}));
+
 // Rate limiting itself is covered by tests/rateLimit.test.js -- this suite
 // mocks it out entirely so it runs without a live Redis connection and
 // isn't affected by request counts across test cases.
@@ -46,6 +62,7 @@ jest.mock("../src/config/redis", () => ({
 
 const request = require("supertest");
 const { getAiRiskExplanation } = require("../src/engines/aiEngine");
+const { executeQuerySafely } = require("../src/engines/executor");
 const app = require("../src/server");
 const { signAccessToken } = require("../src/auth/jwt");
 
@@ -154,5 +171,57 @@ describe("Policy engine wired into POST /api/query", () => {
     expect(res.body.decision.pendingApproval).toBe(true);
     expect(res.body.decision.aiExplanation).toBe("mocked AI explanation");
     expect(getAiRiskExplanation).toHaveBeenCalledTimes(1);
+  });
+
+  it("blocks a developer's INSERT into the policies table even though generic INSERT is allowed (table-specific deny overrides the wildcard)", async () => {
+    const res = await postQueryAs(
+      "developer",
+      "INSERT INTO policies (role, table_name, operation, allowed) VALUES ('x', '*', 'SELECT', true)"
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.body.decision.decision).toBe("BLOCK");
+    expect(res.body.decision.reasons).toEqual(
+      expect.arrayContaining([expect.stringContaining("not permitted")])
+    );
+  });
+});
+
+describe("Query execution wiring in POST /api/query", () => {
+  it("executes a safe, ALLOWed SELECT and includes the execution field in the response", async () => {
+    const res = await postQuery("SELECT id, email FROM users WHERE id = 1");
+
+    expect(res.status).toBe(200);
+    expect(res.body.decision.decision).toBe("ALLOW");
+    expect(executeQuerySafely).toHaveBeenCalledTimes(1);
+    expect(res.body.execution).toMatchObject({ rowCount: 1, truncated: false });
+  });
+
+  it("never executes a BLOCKed query", async () => {
+    const res = await postQueryAs("intern", "INSERT INTO orders (id) VALUES (1)");
+
+    expect(res.status).toBe(200);
+    expect(res.body.decision.decision).toBe("BLOCK");
+    expect(executeQuerySafely).not.toHaveBeenCalled();
+    expect(res.body.execution).toBeNull();
+  });
+
+  it("never executes a non-SELECT operation even when policy ALLOWs it for the role", async () => {
+    const res = await postQueryAs("developer", "INSERT INTO orders (id) VALUES (1)");
+
+    expect(res.status).toBe(200);
+    expect(res.body.decision.decision).toBe("ALLOW");
+    expect(executeQuerySafely).not.toHaveBeenCalled();
+    expect(res.body.execution).toBeNull();
+  });
+
+  it("never executes a query flagged pendingApproval, even though its decision is ALLOW", async () => {
+    const res = await postQueryAs("developer", "DELETE FROM orders WHERE id = 1");
+
+    expect(res.status).toBe(200);
+    expect(res.body.decision.decision).toBe("ALLOW");
+    expect(res.body.decision.pendingApproval).toBe(true);
+    expect(executeQuerySafely).not.toHaveBeenCalled();
+    expect(res.body.execution).toBeNull();
   });
 });

@@ -1,14 +1,14 @@
-import { API_BASE_URL, authHeaders, parseJsonOrThrow } from "./client";
+import { API_BASE_URL, authHeaders, parseJsonOrThrow, authFetch } from "./client";
 
 export async function fetchPolicies(accessToken) {
-  const response = await fetch(`${API_BASE_URL}/api/policies`, {
+  const response = await authFetch(`${API_BASE_URL}/api/policies`, {
     headers: authHeaders(accessToken),
   });
   return parseJsonOrThrow(response);
 }
 
 export async function upsertPolicy(accessToken, policy) {
-  const response = await fetch(`${API_BASE_URL}/api/policies`, {
+  const response = await authFetch(`${API_BASE_URL}/api/policies`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeaders(accessToken) },
     body: JSON.stringify(policy),
@@ -17,7 +17,7 @@ export async function upsertPolicy(accessToken, policy) {
 }
 
 export async function deletePolicy(accessToken, id) {
-  const response = await fetch(`${API_BASE_URL}/api/policies/${id}`, {
+  const response = await authFetch(`${API_BASE_URL}/api/policies/${id}`, {
     method: "DELETE",
     headers: authHeaders(accessToken),
   });

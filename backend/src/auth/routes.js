@@ -6,26 +6,30 @@ const logger = require("../config/logger");
 
 const router = express.Router();
 
-const VALID_ROLES = ["intern", "developer", "admin"];
 const SALT_ROUNDS = 10;
 
+// role is intentionally NOT read from the request body -- self-service
+// registration always creates an 'intern', full stop. If it were
+// client-controlled, anyone could register as 'admin' and the entire
+// policy/RBAC system would be decorative. The only ways a user ever gets a
+// higher role are: an existing admin promoting them via
+// PATCH /api/users/:id/role (src/routes/users.js), or the one-time
+// scripts/seedAdmin.js run directly against the database for the very
+// first admin account.
 router.post("/register", async (req, res) => {
-  const { email, password, role = "intern" } = req.body;
+  const { email, password } = req.body;
 
   if (!email || !password) {
     return res.status(400).json({ error: "email and password are required" });
-  }
-  if (!VALID_ROLES.includes(role)) {
-    return res.status(400).json({ error: `role must be one of ${VALID_ROLES.join(", ")}` });
   }
 
   try {
     const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
     const result = await pool.query(
       `INSERT INTO users (email, password_hash, role)
-       VALUES ($1, $2, $3)
+       VALUES ($1, $2, 'intern')
        RETURNING id, email, role, created_at`,
-      [email, passwordHash, role]
+      [email, passwordHash]
     );
     res.status(201).json({ user: result.rows[0] });
   } catch (err) {

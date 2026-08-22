@@ -1,6 +1,8 @@
+import { useEffect, useState } from "react";
 import { NavLink } from "react-router-dom";
-import { ShieldCheck, LayoutDashboard, ScrollText, Terminal, Gauge, LogOut, Settings } from "lucide-react";
+import { ShieldCheck, LayoutDashboard, ScrollText, Terminal, Gauge, LogOut, Settings, Users, ClipboardCheck } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
+import { fetchPendingApprovals } from "../api/audit";
 
 const LINKS = [
   { to: "/", label: "Overview", icon: LayoutDashboard },
@@ -9,11 +11,41 @@ const LINKS = [
   { to: "/performance", label: "Performance Analytics", icon: Gauge },
 ];
 
-const ADMIN_LINKS = [{ to: "/policies", label: "Policy Management", icon: Settings }];
+const ADMIN_LINKS = [
+  { to: "/approvals", label: "Approval Queue", icon: ClipboardCheck },
+  { to: "/policies", label: "Policy Management", icon: Settings },
+  { to: "/users", label: "User Management", icon: Users },
+];
+
+const PENDING_POLL_INTERVAL_MS = 30000;
 
 export default function Sidebar() {
   const { session, logout } = useAuth();
-  const links = session?.user.role === "admin" ? [...LINKS, ...ADMIN_LINKS] : LINKS;
+  const isAdmin = session?.user.role === "admin";
+  const links = isAdmin ? [...LINKS, ...ADMIN_LINKS] : LINKS;
+
+  const [pendingCount, setPendingCount] = useState(0);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    let cancelled = false;
+
+    function refresh() {
+      fetchPendingApprovals(session.accessToken)
+        .then((data) => !cancelled && setPendingCount(data.logs.length))
+        .catch(() => {
+          // Best-effort badge -- a failed refresh just leaves the last known
+          // count rather than surfacing an error in the nav.
+        });
+    }
+
+    refresh();
+    const interval = setInterval(refresh, PENDING_POLL_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [isAdmin, session?.accessToken]);
 
   return (
     <aside className="sticky top-4 m-4 flex h-[calc(100vh-2rem)] w-64 shrink-0 flex-col rounded-[2rem] border border-border/50 bg-white/70 shadow-soft backdrop-blur-md">
@@ -40,6 +72,11 @@ export default function Sidebar() {
           >
             <Icon size={18} strokeWidth={2.25} />
             {label}
+            {to === "/approvals" && pendingCount > 0 && (
+              <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1.5 text-[11px] font-bold text-white">
+                {pendingCount}
+              </span>
+            )}
           </NavLink>
         ))}
       </nav>

@@ -10,7 +10,10 @@ jest.mock("../src/db/pool", () => {
   return {
     query: jest.fn(async (text, params = []) => {
       if (text.includes("INSERT INTO users")) {
-        const [email, password_hash, role] = params;
+        // /auth/register hardcodes 'intern' in the SQL text itself (not a
+        // bound param) — mirror that here so this mock matches the real
+        // query shape: only email/password_hash are ever passed in.
+        const [email, password_hash] = params;
         if (users.some((u) => u.email === email)) {
           const err = new Error("duplicate key value violates unique constraint");
           err.code = "23505";
@@ -20,7 +23,7 @@ jest.mock("../src/db/pool", () => {
           id: `test-id-${idCounter++}`,
           email,
           password_hash,
-          role,
+          role: "intern",
           created_at: new Date().toISOString(),
         };
         users.push(user);
@@ -53,11 +56,20 @@ describe("POST /auth/register", () => {
   it("creates a user and never returns the password hash", async () => {
     const res = await request(app)
       .post("/auth/register")
-      .send({ email: "alice@example.com", password: "hunter2", role: "developer" });
+      .send({ email: "alice@example.com", password: "hunter2" });
 
     expect(res.status).toBe(201);
-    expect(res.body.user).toMatchObject({ email: "alice@example.com", role: "developer" });
+    expect(res.body.user).toMatchObject({ email: "alice@example.com", role: "intern" });
     expect(res.body.user.password_hash).toBeUndefined();
+  });
+
+  it("ignores a role field sent in the body — every self-registered user is 'intern'", async () => {
+    const res = await request(app)
+      .post("/auth/register")
+      .send({ email: "eve@example.com", password: "hunter2", role: "admin" });
+
+    expect(res.status).toBe(201);
+    expect(res.body.user.role).toBe("intern");
   });
 
   it("rejects a duplicate email with 409", async () => {
